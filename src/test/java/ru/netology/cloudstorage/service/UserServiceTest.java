@@ -1,59 +1,76 @@
 package ru.netology.cloudstorage.service;
 
-import ru.netology.cloudstorage.model.AuthToken;
-import lombok.extern.slf4j.Slf4j;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.junit4.SpringRunner;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
+import org.junit.Assert;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 
-import static ru.netology.cloudstorage.exceptions.MessageConstant.LOGIN;
-import static ru.netology.cloudstorage.exceptions.MessageConstant.LOGIN_NOT_VALID_PASSWORD;
-import static ru.netology.cloudstorage.service.PrepareInfoForTest.*;
-import static org.junit.jupiter.api.Assertions.*;
+import ru.netology.cloudstorage.dto.request.AuthRequest;
+import ru.netology.cloudstorage.dto.response.AuthResponse;
+import ru.netology.cloudstorage.model.entity.RoleEntity;
+import ru.netology.cloudstorage.model.entity.UserEntity;
+import ru.netology.cloudstorage.repository.TokenRepository;
+import ru.netology.cloudstorage.repository.UserRepository;
+import ru.netology.cloudstorage.security.TokenManager;
+
+import java.util.Optional;
 import static org.mockito.Mockito.when;
 
-@Slf4j
-@SpringBootTest
-@AutoConfigureMockMvc
-@RunWith(SpringRunner.class)
 public class UserServiceTest {
+    private static UserServiceImpl userService;
 
-    @MockBean
-    private AuthToken authToken;
+    private static AuthenticationManager authenticationManager;
 
-    @Autowired
-    private MockMvc mockMvc;
+    private static TokenManager tokenManager;
 
-    @Test
-    public void loginValidTest() throws Exception {
-        when(authToken.getAuthToken()).thenReturn(TOKEN);
-        MockHttpServletRequestBuilder requestBuilder = MockMvcRequestBuilders.post(LOGIN)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"login\": \"" + CORRECT_LOGIN + "\", \"password\": \"" + VALID_PASSWORD + "\"}");
-        String authToken = mockMvc.perform(requestBuilder)
-                .andExpect(MockMvcResultMatchers.status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        assertNotNull(authToken);
-        assertTrue(authToken.contains("auth-token"));
+    private static UserRepository userRepository;
+    private static TokenRepository tokenRepository;
+
+    @BeforeAll
+    public static void beforeAll() {
+        userRepository = Mockito.mock(UserRepository.class);
+        Mockito.when(userRepository.existsByLogin(Mockito.anyString())).thenReturn(true);
+        tokenManager = Mockito.mock(TokenManager.class);
+        authenticationManager = Mockito.mock(AuthenticationManager.class);
+
+        tokenRepository = Mockito.mock(TokenRepository.class);
+        Mockito.when(tokenRepository.removeToken(Mockito.anyString())).thenReturn(Optional.of("Success logout!"));
+
+        userService = new UserServiceImpl(
+                userRepository,
+                tokenManager,
+                authenticationManager,
+                tokenRepository
+        );
     }
 
     @Test
-    public void loginNonValidTest() throws Exception {
-        when(authToken.getAuthToken()).thenReturn(TOKEN);
-        mockMvc.perform(MockMvcRequestBuilders.post(LOGIN)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"login\": \"" + "check@email.ru" + "\", \"password\": \"" + NON_VALID_PASSWORD + "\"}"))
-                .andExpect(MockMvcResultMatchers.status().isBadRequest())
-                .andExpect(MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
-                .andExpect(MockMvcResultMatchers.content().string(LOGIN_NOT_VALID_PASSWORD));
+    void testCreateAuthToken() {
+        when(tokenManager.generateToken(Mockito.<UserDetails>any())).thenReturn("testToken");
+        when(authenticationManager.authenticate(Mockito.<Authentication>any()))
+                .thenReturn(new TestingAuthenticationToken("Principal", "Credentials"));
+
+        UserEntity user = new UserEntity(
+                1L,
+                "login",
+                "password",
+                "fName",
+                "lName",
+                RoleEntity.USER
+        );
+        Mockito.when(userRepository.getUsersByLogin(Mockito.anyString()))
+                .thenReturn(Optional.ofNullable(user));
+
+        AuthRequest login = new AuthRequest(
+                "login",
+                "password"
+        );
+        AuthResponse authResponse = userService.loginUser(login);
+        Assert.assertEquals("testToken", authResponse.getAuthToken());
+        Mockito.verify(tokenRepository, Mockito.atLeastOnce()).save(Mockito.any());
     }
 }

@@ -1,10 +1,11 @@
 package ru.netology.cloudstorage.controller;
 
-import ru.netology.cloudstorage.dto.response.FileResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import ru.netology.cloudstorage.dto.request.NewFileNameRequest;
+import ru.netology.cloudstorage.dto.response.FileResponse;
 import ru.netology.cloudstorage.mapper.CloudServiceMapper;
 import ru.netology.cloudstorage.model.entity.FileEntity;
-import ru.netology.cloudstorage.service.CheckTokenService;
 import ru.netology.cloudstorage.service.FileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,28 +26,31 @@ import static ru.netology.cloudstorage.exceptions.MessageConstant.*;
 public class FileController {
 
     private final FileService fileService;
-    private final CheckTokenService checkTokenService;
     private final CloudServiceMapper mapper;
 
     @GetMapping(LIST)
     public List<FileResponse> getAllFiles(@RequestHeader("auth-token") String authToken,
                                           @RequestParam("limit") Integer limit) {
-        checkTokenService.testToken(authToken);
-        return mapper.fileEntityToFileResponse(fileService.getAllFiles(), limit);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ADMIN"))) {
+            return mapper.fileEntityToFileResponse(fileService.getAllFiles(limit), limit);
+        } else {
+            return mapper.fileEntityToFileResponse(fileService.getFiles(limit), limit);
+        }
+
     }
 
     @PostMapping(FILE)
     public ResponseEntity<String> uploadFile(@RequestHeader(value = "auth-token") String authToken,
                                              @RequestParam(value = "file") MultipartFile file) {
-        checkTokenService.testToken(authToken);
-        String result = fileService.uploadFile(file);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String result = fileService.uploadFile(file, authentication.getName());
         return ResponseEntity.status(HttpStatus.OK).body(result);
     }
 
     @DeleteMapping(FILE)
     public ResponseEntity<String> deleteFile(@RequestHeader(value = "auth-token") String authToken,
                                              @RequestParam(value = "filename") String filename) {
-        checkTokenService.testToken(authToken);
         String result = fileService.deleteFile(filename);
         return ResponseEntity.status(HttpStatus.OK).body(result);
     }
@@ -54,11 +58,10 @@ public class FileController {
     @GetMapping(FILE)
     public ResponseEntity<byte[]> getFile(@RequestHeader("auth-token") String authToken,
                                           @RequestParam("filename") String filename) {
-        checkTokenService.testToken(authToken);
         FileEntity file = fileService.getFile(filename);
         return ResponseEntity.ok()
                 .header(HttpHeaders
-                        .CONTENT_DISPOSITION, "attachment; filename=\"" + file.getFilename() + "\"")
+                        .CONTENT_DISPOSITION, "attachment; filename=\"" + file.getName() + "\"")
                 .contentType(MediaType.valueOf(file.getType()))
                 .body(file.getBody());
     }
@@ -67,7 +70,6 @@ public class FileController {
     public ResponseEntity<String> renameFile(@RequestHeader("auth-token") String authToken,
                                              @RequestParam String filename,
                                              @RequestBody NewFileNameRequest newFilename) {
-        checkTokenService.testToken(authToken);
         String result = fileService.renameFile(filename, newFilename);
         return ResponseEntity.status(HttpStatus.OK).body(result);
     }

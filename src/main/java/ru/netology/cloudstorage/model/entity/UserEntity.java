@@ -16,10 +16,10 @@ public class UserEntity {
     @SequenceGenerator(name = "usersSequence", sequenceName = "user_sequence", allocationSize = 1, initialValue = 3)
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "usersSequence")
     @Column(name = "id")
-    private Long Id;
+    private Long id;
 
-    @Column(name = "email")
-    private String email;
+    @Column(name = "login")
+    private String login;
 
     @Column(name = "password")
     private String password;
@@ -29,4 +29,8 @@ public class UserEntity {
 
     @Column(name = "last_name")
     private String lastName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role")
+    private RoleEntity role;
 }

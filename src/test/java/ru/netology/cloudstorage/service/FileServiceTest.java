@@ -1,105 +1,89 @@
 package ru.netology.cloudstorage.service;
 
+import org.junit.Assert;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.multipart.MultipartFile;
+import ru.netology.cloudstorage.dto.request.NewFileNameRequest;
+import ru.netology.cloudstorage.exceptions.DeleteFileException;
 import ru.netology.cloudstorage.model.entity.FileEntity;
+import ru.netology.cloudstorage.model.entity.UserEntity;
 import ru.netology.cloudstorage.repository.FileRepository;
-import org.junit.Test;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.runner.RunWith;
 import org.mockito.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.junit4.SpringRunner;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
-import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import ru.netology.cloudstorage.repository.UserRepository;
+import ru.netology.cloudstorage.security.TokenManager;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.Optional;
+
+import static org.mockito.Mockito.when;
 import static ru.netology.cloudstorage.exceptions.MessageConstant.*;
-import static ru.netology.cloudstorage.service.PrepareInfoForTest.*;
-import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
-@Testcontainers
-@Transactional
-@AutoConfigureMockMvc
-@RunWith(SpringRunner.class)
 public class FileServiceTest {
+    private final static String USERNAME = "User";
+    private static FileRepository fileRepository;
+    private static UserRepository userRepository;
+    private static FileServiceImpl fileService;
+    private static FileEntity file;
 
-    @Autowired
-    private MockMvc mockMvc;
+    @BeforeEach
+    public  void beforeEach() {
+        UserEntity mockedCloudUser = Mockito.mock(UserEntity.class);
+        TokenManager tokenManager = Mockito.mock(TokenManager.class);
+        Mockito.when(tokenManager.extractEmailFromJwt(Mockito.anyString())).thenReturn(USERNAME);
 
-    @Autowired
-    private FileRepository fileRepository;
+        fileRepository = Mockito.mock(FileRepository.class);
+        userRepository = Mockito.mock(UserRepository.class);
 
-    @MockBean
-    private CheckTokenService checkTokenService;
-
-
-    public void mockRepo() {
-        getFileToUploadTest();
-        fileRepository.save(getTestUserEntity());
-    }
-
-    @AfterEach
-    public void cleanDBContainer() {
-        fileRepository.deleteAllInBatch();
-    }
-
-    @Test
-    public void uploadValidFileTest() throws Exception {
-        Mockito.doNothing().when(checkTokenService).testToken(TOKEN);
-        mockMvc.perform(MockMvcRequestBuilders.multipart(FILE)
-                        .file(getFileToUploadTest())
-                        .characterEncoding("UTF-8")
-                        .header("auth-token", TOKEN))
-                .andExpect(MockMvcResultMatchers.status().isOk());
-        FileEntity file = fileRepository.findByFilename(FILENAME);
-        assertNotNull(file);
+        when(tokenManager.generateToken(Mockito.<UserDetails>any())).thenReturn("testToken");
+        byte[] fileBytes = "content".getBytes();
+        file = new FileEntity( "TestFile", mockedCloudUser,256,"image/jpeg", fileBytes);
+        when(fileRepository.findByName(Mockito.any()))
+                .thenReturn(
+                        file
+                );
+        fileService = new FileServiceImpl(fileRepository, userRepository);
     }
 
     @Test
-    public void uploadNonValidFileTest() throws Exception {
-        Mockito.doNothing().when(checkTokenService).testToken(TOKEN);
-        getPerform();
-        getPerform()
-                .andExpect(MockMvcResultMatchers.status().isBadRequest())
-                .andExpect(MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
-                .andExpect(MockMvcResultMatchers.content().string(ERROR_UPLOAD_NOT_UNIQ_FILE));
-    }
-
-    private ResultActions getPerform() throws Exception {
-        return mockMvc.perform(MockMvcRequestBuilders.multipart(FILE)
-                .file(getFileToUploadTest())
-                .characterEncoding("UTF-8")
-                .header("auth-token", TOKEN));
+    public void downloadOK() {
+        FileEntity fileEntity = fileService.getFile("TestFile");
+        Assert.assertNotNull(fileEntity);
+        Assertions.assertEquals(file, fileEntity);
     }
 
     @Test
-    public void deleteFileTest() throws Exception {
-        mockRepo();
-        Mockito.doNothing().when(checkTokenService).testToken(TOKEN);
-        mockMvc.perform(MockMvcRequestBuilders.delete(FILE)
-                        .param(getFileToUploadTest().getName(), FILENAME)
-                        .characterEncoding("UTF-8")
-                        .header("auth-token", TOKEN))
-                .andExpect(MockMvcResultMatchers.status().isOk());
+    public void uploadOK() throws IOException {
+        UserEntity mockedCloudUser = Mockito.mock(UserEntity.class);
+        Mockito.when(userRepository.getUsersByLogin(Mockito.anyString()))
+                .thenReturn(Optional.of(mockedCloudUser));
+        Mockito.when(fileRepository.findByName(Mockito.anyString())).thenReturn(null);
+
+        File file = new File("test.txt");
+        byte[] fileBytes = Files.readAllBytes(file.toPath());
+        MultipartFile multipartFile = new MockMultipartFile("file", file.getName(), "text/plain", fileBytes);
+        String actual = fileService.uploadFile(multipartFile, "user");
+        String expected = SUCCESS_UPLOAD;
+        Assertions.assertEquals(expected, actual);
     }
 
     @Test
-    public void getFileTest() throws Exception {
-        mockRepo();
-        Mockito.doNothing().when(checkTokenService).testToken(TOKEN);
-        mockMvc.perform(MockMvcRequestBuilders.get(FILE)
-                        .param(getFileToUploadTest().getName(), FILENAME)
-                        .characterEncoding("UTF-8")
-                        .header("auth-token", TOKEN)
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(MockMvcResultMatchers.status().isOk())
-                .andExpect(MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN));
+    public void deleteOK() throws DeleteFileException {
+        String actual = fileService.deleteFile("TestFile");
+        String expected = SUCCESS_DELETE;
+        Assertions.assertEquals(expected, actual);
+    }
+
+    @Test
+    public void editOK(){
+        NewFileNameRequest newFileNameRequest = new NewFileNameRequest("RENAMED");
+        String expected = SUCCESS_RENAME;
+        String actual = fileService.renameFile(file.getName(), newFileNameRequest);
+        Assertions.assertEquals(expected, actual);
     }
 }

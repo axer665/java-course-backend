@@ -8,9 +8,10 @@ import java.util.List;
 
 public interface FileService {
 
-    List<FileEntity> getAllFiles();
+    List<FileEntity> getAllFiles(int limit);
+    List<FileEntity> getFiles(int limit);
 
-    String uploadFile(MultipartFile file);
+    String uploadFile(MultipartFile file, String userName);
 
     String deleteFile(String filename);
 

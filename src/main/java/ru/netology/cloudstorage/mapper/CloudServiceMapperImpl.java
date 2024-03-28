@@ -13,7 +13,7 @@ public class CloudServiceMapperImpl implements CloudServiceMapper {
 
     @Override
     public List<FileResponse> fileEntityToFileResponse(List<FileEntity> list, Integer limit) {
-        return list.stream().map(f -> new FileResponse(f.getFilename(), f.getSize()))
+        return list.stream().map(f -> new FileResponse(f.getName(), f.getSize(), f.getUser().getLogin()))
                 .limit(limit)
                 .collect(Collectors.toList());
     }
